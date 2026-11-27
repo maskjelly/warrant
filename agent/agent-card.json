@@ -1,0 +1,68 @@
+{
+  "name": "Warrant demo agent",
+  "description": "Reference buyer agent for Warrant. It carries a Verified by Concordium badge and pays per request over x402 from the account that owns the badge.",
+  "url": "https://raw.githubusercontent.com/maskjelly/warrant/main/agent/agent-card.json",
+  "version": "1.0.0",
+  "defaultInputModes": [
+    "text/markdown",
+    "application/json"
+  ],
+  "defaultOutputModes": [
+    "text/markdown",
+    "application/json"
+  ],
+  "authentication": {
+    "schemes": []
+  },
+  "skills": [
+    {
+      "id": "paid-api-call",
+      "name": "Paid API call",
+      "description": "Calls a Warrant-protected API: presents its badge, answers the x402 challenge, and returns the result.",
+      "tags": [
+        "x402",
+        "payments"
+      ]
+    }
+  ],
+  "capabilities": {
+    "streaming": false,
+    "pushNotifications": false,
+    "extensions": [
+      {
+        "uri": "https://docs.concordium.com/a2a-extensions/concordium-badge/v1",
+        "description": "Verified by Concordium badge — on-chain agent identity in a CIS-8004 registry",
+        "required": false,
+        "params": {
+          "tokenAddress": "ccd:4221332d34e1694168c2a0c0b3fd0f27/cis-2:JyP9U8ewSjxyopPwq3PKf",
+          "owner": {
+            "account": "ccd:4221332d34e1694168c2a0c0b3fd0f27:4qo3UoDD8ztpzWed61j7ZYQ3jdMzPA8wH5LiGgZ54eV6yJ8wAp"
+          },
+          "agentWallet": "ccd:4221332d34e1694168c2a0c0b3fd0f27:4qo3UoDD8ztpzWed61j7ZYQ3jdMzPA8wH5LiGgZ54eV6yJ8wAp",
+          "contracts": {
+            "cis8004": "ccd:4221332d34e1694168c2a0c0b3fd0f27:12802.0",
+            "cis8": "ccd:4221332d34e1694168c2a0c0b3fd0f27:12801.0"
+          },
+          "verify": "Resolve tokenAddress via CIS-8004 agent_of; confirm owner + status=Active + card SHA-256 == metadata_hash.",
+          "verification": {
+            "service": "Concordium Agent Registry",
+            "verifyUrl": "https://agent-registry-mcp.concordium.com/v1/badge-check/JyP9U8ewSjxyopPwq3PKf",
+            "mcp": "https://agent-registry-mcp.concordium.com/mcp",
+            "docs": "https://docs.concordium.com/en/mainnet/technical-reference/agent-registry/concordium-badge.html"
+          }
+        }
+      }
+    ]
+  },
+  "provider": {
+    "organization": "Warrant",
+    "url": "https://github.com/maskjelly/warrant"
+  },
+  "documentationUrl": "https://github.com/maskjelly/warrant",
+  "registrations": [
+    {
+      "agentId": 1549,
+      "agentRegistry": "ccd:4221332d34e1694168c2a0c0b3fd0f27:12802.0"
+    }
+  ]
+}
