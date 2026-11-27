@@ -101,7 +101,7 @@ Keys are written to `keys/`, which is git-ignored. `GET /audit` returns the reco
 PAY_TO=0xYourAddress bun run service   # GET /v1/agent/:badge?network=mainnet|testnet, $0.005 per call
 ```
 
-Status: the 402 challenge is verified locally. A paid call has not been run end to end, and the service is not deployed.
+Live at `https://warrant-agent-check.vercel.app/v1/agent/:badge` (deployed from `api/index.ts`). The unpaid request returns the correct 402 challenge; a paid call has not been run end to end.
 
 ## Verifying the audit log
 

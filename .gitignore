@@ -3,3 +3,5 @@ node_modules
 *.key
 keys/
 data/
+.vercel
+.env*
