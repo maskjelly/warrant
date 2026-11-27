@@ -1,5 +1,5 @@
 {
   "rewrites": [{ "source": "/(.*)", "destination": "/api" }],
   "buildCommand": "",
-  "outputDirectory": "docs"
+  "outputDirectory": "agent"
 }
