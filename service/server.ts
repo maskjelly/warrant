@@ -44,6 +44,9 @@ app.use(
 app.get("/v1/agent/:badge", async (c) => {
   const which = c.req.query("network") === "testnet" ? "testnet" : "mainnet";
   const verdict = await registries[which].verify(c.req.param("badge"));
+  // A registry outage is not a verdict. Error responses are not settled, so the caller is not charged.
+  const outage = !verdict.valid && verdict.issues.some((i) => /^registry_http_(429|5\d\d)$/.test(i));
+  if (outage) return c.json({ error: "registry_unavailable", detail: "No verdict; you were not charged. Retry later." }, 503);
   return c.json(
     verdict.valid
       ? { badge: verdict.agent.tokenAddress, network: which, accountable: true, owner: verdict.agent.ownerAccount, agentWallet: verdict.agent.agentWallet, agentCard: verdict.agent.agentUri }
