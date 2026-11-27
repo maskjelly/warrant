@@ -49,6 +49,8 @@ agent                       Warrant                         Concordium
 |---|---|
 | Demo agent registration (token 1549, badge `JyP9U8ewSjxyopPwq3PKf`) | [transaction](https://testnet.ccdscan.io/?dcount=1&dentity=transaction&dhash=a3c28750370a48a542c50295068825ac041624f5ed6a3dea14c06c1929bbdef0) |
 | Agent Card URL and hash pinned | [transaction](https://testnet.ccdscan.io/?dcount=1&dentity=transaction&dhash=ea128f0c1a5de420c61deb0be2587a6e5630f102b7c3d1bd7929b8537889f539) |
+| Paid request served by the gateway | [transaction](https://testnet.ccdscan.io/?dcount=1&dentity=transaction&dhash=12947931933adfb34b4f9486bc39b36abcde785aa6f0ebd913efbf678fbb30da) |
+| Audit head anchored (through record 9) | [transaction](https://testnet.ccdscan.io/?dcount=1&dentity=transaction&dhash=f98c29882857f9b3f5930ba5e08d0ec62bb243b10c85b1119431112cbb60a3a1) |
 | First sponsored x402 payment | [transaction](https://testnet.ccdscan.io/?dcount=1&dentity=transaction&dhash=5e8f4ac562bcf4078a4695475806b1fa3ebf3520805b2bd4554c8d1c8de39d71) |
 
 ## Use it

@@ -33,8 +33,8 @@ function setup(over: { maxPerOwner?: number; settleOk?: boolean } = {}) {
   const app = new Hono<WarrantEnv>();
   app.use("/data", warrant({ registry, settler, audit, policy: createPolicy({ maxPerOwner: over.maxPerOwner }) }));
   app.get("/data", (c) => c.json({ ok: true, servedTo: c.get("agent").tokenAddress, tx: c.get("paymentTx") }));
-  const pay = (sender: string) =>
-    encodePaymentSignatureHeader({ x402Version: 2, accepted: requirements, payload: { sender, signedTransaction: {} } } as never);
+  const pay = (sender: string, claimed = sender) =>
+    encodePaymentSignatureHeader({ x402Version: 2, accepted: requirements, payload: { sender: claimed, signedTransaction: { header: { sender } } } } as never);
   const call = (headers: Record<string, string> = {}) => app.request("/data", { headers });
   return { call, pay, audit, settledCount: () => settled };
 }
@@ -82,6 +82,10 @@ test("someone else's badge cannot be borrowed: payer must be bound to it on chai
   const res = await call({ [BADGE_HEADER]: GOOD, "payment-signature": pay(STRANGER) });
   expect(res.status).toBe(403);
   expect((await res.json()).error).toBe("payer_not_bound_to_badge");
+  expect(settledCount()).toBe(0);
+  // Claiming the owner's address next to a transfer signed by someone else changes nothing.
+  const forged = await call({ [BADGE_HEADER]: GOOD, "payment-signature": pay(STRANGER, OWNER) });
+  expect(forged.status).toBe(403);
   expect(settledCount()).toBe(0);
 });
 

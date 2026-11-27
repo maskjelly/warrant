@@ -31,8 +31,10 @@ export interface WarrantOptions {
 
 export type WarrantEnv = { Variables: { agent: AgentIdentity; paymentTx: string } };
 
+/** The account the transfer is signed by. A separately claimed `sender` field is not trusted. */
 function payerOf(payload: PaymentPayload): string | null {
-  const sender = (payload.payload as { sender?: unknown } | undefined)?.sender;
+  const tx = (payload.payload as { signedTransaction?: { header?: { sender?: unknown } } } | undefined)?.signedTransaction;
+  const sender = tx?.header?.sender;
   return typeof sender === "string" ? sender : null;
 }
 
