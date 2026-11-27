@@ -10,7 +10,7 @@ An agent is served when all three hold:
 
 Every outcome, served or refused, goes into a hash-chained audit log whose head is written on Concordium, so the operator cannot quietly rewrite history.
 
-Built for the Concordium Trusted Agents Hackathon. Runs on Concordium testnet. [Watch the 90-second demo](https://maskjelly.github.io/warrant/).
+Built for the Concordium Trusted Agents Hackathon. Runs on Concordium testnet. [Watch the 90-second demo](https://cdn.jsdelivr.net/gh/maskjelly/warrant@4eea7e866d2a460822a54056aa8de2e4f368f0aa/docs/demo.mp4).
 
 ## Request flow
 
