@@ -64,7 +64,7 @@ export function createRegistry(options: RegistryOptions): Registry {
     const check = (await res.json()) as any;
     if (check.network && check.network !== options.network) return { valid: false, issues: ["wrong_network"] };
     if (check.badge_valid !== true) {
-      const issues = Array.isArray(check.issues) && check.issues.length ? check.issues.map(String) : ["badge_invalid"];
+      const issues = Array.isArray(check.issues) && check.issues.length ? check.issues.map((i: any) => (typeof i === "string" ? i : String(i?.message ?? i?.field ?? "badge_invalid"))) : ["badge_invalid"];
       return { valid: false, issues };
     }
     const agent = await rpc("agent_by_token_address", { token_address: tokenAddress });
