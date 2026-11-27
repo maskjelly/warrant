@@ -93,6 +93,16 @@ Keys are written to `keys/`, which is git-ignored. `GET /audit` returns the reco
 | `WARRANT_MAX_PER_OWNER`, `WARRANT_WINDOW_MS` | `2`, `60000` | Served requests per owner per window |
 | `WARRANT_ANCHOR_EVERY` | `5` | Anchor after this many new records |
 
+## Paid agent check (Base)
+
+`service/server.ts` sells one lookup to agents on other chains: is there a valid Verified by Concordium badge behind this agent, and which account answers for it. It charges USDC on Base over x402 through a public facilitator, paid straight to `PAY_TO`; the server holds no keys.
+
+```sh
+PAY_TO=0xYourAddress bun run service   # GET /v1/agent/:badge?network=mainnet|testnet, $0.005 per call
+```
+
+Status: the 402 challenge is verified locally. A paid call has not been run end to end, and the service is not deployed.
+
 ## Verifying the audit log
 
 Each record holds the SHA-256 of the previous one. An anchor transaction carries `warrant/v1`, the record count and the head hash. To audit: recompute the chain from `GET /audit` (`verifyChain` in `src/audit.ts`), then compare the hash at each anchored position with the data in the anchor transaction. Any edit, deletion or reorder before an anchor changes that hash.
