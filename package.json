@@ -1,0 +1,21 @@
+{
+  "name": "warrant",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "bun test",
+    "typecheck": "tsc --noEmit",
+    "dev": "bun run src/server.ts"
+  },
+  "dependencies": {
+    "@concordium/web-sdk": "^12.1.0",
+    "@x402/concordium": "^2.32.0",
+    "@x402/core": "^2.32.0",
+    "hono": "^4.13.23"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.4.5",
+    "typescript": "^7.0.2"
+  }
+}
