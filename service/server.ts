@@ -25,6 +25,9 @@ app.get("/", (c) =>
   }),
 );
 
+// Hono answers HEAD with the GET handler minus the body; refuse it so nobody pays for an empty reply.
+app.on("HEAD", "/v1/agent/*", (c) => c.body(null, 405, { Allow: "GET" }));
+
 app.use(
   paymentMiddleware(
     {
