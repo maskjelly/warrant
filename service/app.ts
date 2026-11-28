@@ -52,6 +52,9 @@ app.get("/openapi.json", (c) =>
       title: "Warrant agent check",
       version: "0.1.0",
       description: "Is there an accountable human behind this Concordium agent? Pay per call with x402.",
+      contact: { url: "https://github.com/maskjelly/warrant/issues" },
+      "x-guidance":
+        "Call GET /v1/check?badge=<token address> before trusting or paying a Concordium agent. accountable:true means the badge is valid and owner is the account that answers for the agent. A 503 means no verdict and no charge; retry later.",
     },
     servers: [{ url: new URL(c.req.url).origin }],
     paths: {
@@ -64,7 +67,7 @@ app.get("/openapi.json", (c) =>
             { name: "network", in: "query", required: false, schema: inputSchema.properties.network },
           ],
           "x-payment-info": {
-            protocols: ["x402"],
+            protocols: [{ x402: {} }],
             price: { mode: "fixed", currency: "USD", amount: price.replace(/^\$/, "") },
           },
           responses: {
@@ -76,6 +79,13 @@ app.get("/openapi.json", (c) =>
       },
     },
   }),
+);
+app.get("/favicon.svg", (c) =>
+  c.body(
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><rect width="32" height="32" rx="6" fill="#0b3d2e"/><path d="M8 16l6 6 10-12" fill="none" stroke="#fff" stroke-width="3.5"/></svg>',
+    200,
+    { "Content-Type": "image/svg+xml", "Cache-Control": "public, max-age=86400" },
+  ),
 );
 app.get("/.well-known/x402", (c) => c.json({ version: 1, resources: [`${new URL(c.req.url).origin}/v1/check`] }));
 
