@@ -14,6 +14,8 @@ const payTo = process.env.PAY_TO as `0x${string}` | undefined;
 if (!payTo) throw new Error("Set PAY_TO to the EVM address that receives USDC.");
 const network = (process.env.X402_NETWORK ?? "eip155:8453") as `${string}:${string}`;
 const price = process.env.PRICE ?? "$0.005";
+// FACILITATOR_URL swaps in another facilitator, e.g. a local stand-in for tests.
+const facilitatorConfig = process.env.FACILITATOR_URL ? { url: process.env.FACILITATOR_URL } : facilitator;
 const registries = { mainnet: createRegistry({ network: "mainnet" }), testnet: createRegistry({ network: "testnet" }) };
 
 const baseChain = createBaseReader();
@@ -138,7 +140,7 @@ app.use("/v1/*", async (c, next) => {
 });
 
 const newResourceServer = () =>
-  new x402ResourceServer(new HTTPFacilitatorClient(facilitator)).register(network, new ExactEvmScheme());
+  new x402ResourceServer(new HTTPFacilitatorClient(facilitatorConfig)).register(network, new ExactEvmScheme());
 const paid = { accepts: [{ scheme: "exact", price, network, payTo }], description, mimeType: "application/json" };
 app.use(
   paymentMiddleware(
