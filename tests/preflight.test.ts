@@ -12,14 +12,16 @@ const wallet: ChainReader = {
 const PAY_TO = "0xb9a5d2e874A410247C03B71c2b29b6542eb77aBb";
 const demand = (accept: Record<string, unknown>) => ({ x402Version: 2, accepts: [{ scheme: "exact", network: "eip155:8453", payTo: PAY_TO, amount: "5000", ...accept }] });
 
-function probe(answer: { status: number; header?: string; body?: string } | Error, addresses = ["93.184.216.34"]): Probe & { calls: number } {
+function probe(answer: { status: number; header?: string; body?: string } | Error, addresses = ["93.184.216.34"]): Probe & { calls: number; closed: number } {
   const p = {
     calls: 0,
+    closed: 0,
     resolve: async () => addresses,
     get: async (..._args: string[]) => {
       p.calls++;
       if (answer instanceof Error) throw answer;
       return {
+        close: () => void p.closed++,
         status: answer.status,
         header: () => answer.header ?? null,
         text: async () => {
@@ -96,4 +98,15 @@ test("a malformed option is skipped and a long list is capped, both with a flag"
   const result = await preflight("https://seller.example/paid", probe({ status: 402, body }), wallet);
   expect(result).toMatchObject({ ok: true, report: { optionsTotal: 12, flags: ["malformed_option_skipped", "options_truncated"] } });
   expect((result as unknown as { report: { options: unknown[] } }).report.options).toHaveLength(10);
+});
+
+test("a dead first address is not a dead seller, and the response is always released", async () => {
+  const p = probe({ status: 402, header: header(demand({ asset: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913" })) }, ["93.184.216.34", "93.184.216.35"]);
+  const get = p.get;
+  p.get = async (url: string, address: string) => {
+    if (address === "93.184.216.34") throw new Error("connection refused");
+    return get(url, address);
+  };
+  expect(await preflight("https://seller.example/paid", p, wallet)).toMatchObject({ ok: true, report: { reachable: true, flags: [] } });
+  expect(p.closed).toBe(1);
 });

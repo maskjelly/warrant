@@ -31,11 +31,15 @@ const PRIVATE_V4 = /^(0\.|10\.|127\.|169\.254\.|172\.(1[6-9]|2\d|3[01])\.|192\.1
 const isPrivate = (ip: string) =>
   isIP(ip) === 4 ? PRIVATE_V4.test(ip) : /^(::1?$|f[cd]|fe[89ab]|ff)/i.test(ip) || (/^::ffff:/i.test(ip) && PRIVATE_V4.test(ip.slice(7)));
 
+const DEADLINE_MS = 8000;
+// A host may publish several addresses; one dead address is not a dead seller.
+const MAX_ADDRESSES = 3;
+
 export interface Probe {
   /** Resolves a hostname to the addresses a request would reach. */
   resolve(host: string): Promise<string[]>;
   /** One unpaid GET to `url`, connecting to `address` and nowhere else; redirects not followed. */
-  get(url: string, address: string): Promise<{ status: number; header(name: string): string | null; text(): Promise<string> }>;
+  get(url: string, address: string): Promise<{ status: number; header(name: string): string | null; text(): Promise<string>; close(): void }>;
 }
 
 export const liveProbe: Probe = {
@@ -47,7 +51,7 @@ export const liveProbe: Probe = {
         {
           method: "GET",
           headers: { accept: "application/json" },
-          timeout: 8000,
+          timeout: DEADLINE_MS,
           // Connect to the address that was checked, so a second DNS answer cannot redirect the request to a private one.
           lookup: (_host, options, callback) => {
             const family = isIP(address);
@@ -74,10 +78,13 @@ export const liveProbe: Probe = {
               res.on("error", fail);
               res.resume();
             });
-          resolve({ status: res.statusCode ?? 0, header, text });
+          resolve({ status: res.statusCode ?? 0, header, text, close: () => (clearTimeout(deadline), void req.destroy()) });
         },
       );
+      // The socket timeout restarts on every chunk, so a slow stream needs a deadline for the whole exchange.
+      const deadline = setTimeout(() => req.destroy(new Error("deadline")), DEADLINE_MS);
       req.on("timeout", () => req.destroy(new Error("timeout")));
+      req.on("close", () => clearTimeout(deadline));
       req.on("error", reject);
       req.end();
     }),
@@ -117,13 +124,34 @@ export async function preflight(input: string, probe: Probe, base: ChainReader):
     return { ok: true, report: { ...report, reachable: false } };
   }
   const started = Date.now();
-  let response: Awaited<ReturnType<Probe["get"]>>;
-  try {
-    response = await probe.get(url.href, addresses[0]!);
-  } catch {
+  let response: Awaited<ReturnType<Probe["get"]>> | undefined;
+  for (const address of addresses.slice(0, MAX_ADDRESSES)) {
+    try {
+      response = await probe.get(url.href, address);
+      break;
+    } catch {
+      // Try the next address.
+    }
+  }
+  if (!response) {
     flags.push("no_response");
     return { ok: true, report: { ...report, reachable: false } };
   }
+  try {
+    return await readResponse(response, report, started, base);
+  } finally {
+    // Release the socket whether or not the body was read.
+    response.close();
+  }
+}
+
+async function readResponse(
+  response: Awaited<ReturnType<Probe["get"]>>,
+  report: Record<string, unknown> & { flags: string[] },
+  started: number,
+  base: ChainReader,
+): Promise<Preflight> {
+  const flags = report.flags;
   report.reachable = true;
   report.status = response.status;
   report.responseMs = Date.now() - started;
