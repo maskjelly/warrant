@@ -8,6 +8,7 @@ import { paymentMiddleware, x402ResourceServer } from "@x402/hono";
 import { Hono } from "hono";
 import { createRegistry } from "../src/registry.js";
 import { createMcpHandler } from "./mcp.js";
+import { liveProbe, preflight } from "./preflight.js";
 import { createBaseReader, inspect } from "./risk.js";
 
 const payTo = process.env.PAY_TO as `0x${string}` | undefined;
@@ -28,6 +29,7 @@ app.get("/", (c) =>
     what: "Tells you whether a Concordium-registered agent has a valid Verified by Concordium badge and which account answers for it.",
     paid: { route: "GET /v1/check?badge=<token address>&network=mainnet|testnet", price, network, protocol: "x402" },
     alsoPaid: { route: "GET /v1/base/address?address=<0x address>", price, what: "On-chain facts about a Base address or token before you pay it or buy it: proxy, owner, mint, pause and blocklist powers." },
+    alsoPaidPreflight: { route: "GET /v1/x402/preflight?url=<https URL of a paid x402 endpoint>", price, what: "Before paying an x402 seller: is the endpoint up, is it asking for real USDC, how much, and what is the receiving address." },
     mcp: "POST /mcp (streamable HTTP; tools check_concordium_agent and inspect_base_address, paid per call with x402)",
     openapi: "/openapi.json",
     source: "https://github.com/maskjelly/warrant",
@@ -69,6 +71,35 @@ const addressOutputExample = {
   flags: ["upgradeable_proxy", "has_owner", "can_mint", "can_pause", "can_blocklist"],
 };
 
+const preflightDescription =
+  "Before you pay an x402 seller: is the endpoint up, does it ask for real Circle USDC, how much, and what is the address that receives the money.";
+const exampleUrl = "https://warrant-agent-check.vercel.app/v1/base/address?address=0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913";
+const preflightInputSchema = {
+  properties: { url: { type: "string", description: "The full https URL of the paid x402 endpoint you are about to call." } },
+  required: ["url"],
+};
+const preflightOutputExample = {
+  url: exampleUrl,
+  reachable: true,
+  status: 402,
+  responseMs: 180,
+  x402Version: 2,
+  options: [
+    {
+      scheme: "exact",
+      network: "eip155:8453",
+      asset: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+      isCircleUsdc: true,
+      amountAtomic: "5000",
+      priceUsd: 0.005,
+      payTo: "0xb9a5d2e874A410247C03B71c2b29b6542eb77aBb",
+      recipient: { kind: "wallet", transactionsSent: 0, flags: ["never_sent_a_transaction"] },
+      flags: [],
+    },
+  ],
+  flags: [],
+};
+
 // Discovery documents for x402 directories. Both are free to read.
 app.get("/openapi.json", (c) =>
   c.json({
@@ -80,7 +111,7 @@ app.get("/openapi.json", (c) =>
         "Checks an agent should run before it trusts or pays a counterparty: who answers for a Concordium agent, and what a Base address or token can do. Pay per call with x402.",
       contact: { url: "https://github.com/maskjelly/warrant/issues" },
       "x-guidance":
-        "Call GET /v1/check?badge=<token address> before trusting or paying a Concordium agent. accountable:true means the badge is valid and owner is the account that answers for the agent. Call GET /v1/base/address?address=<0x address> before sending funds to a Base address or buying a Base token; flags lists what the contract can do to holders. On both routes a 503 means no answer and no charge; retry later.",
+        "Call GET /v1/check?badge=<token address> before trusting or paying a Concordium agent. accountable:true means the badge is valid and owner is the account that answers for the agent. Call GET /v1/base/address?address=<0x address> before sending funds to a Base address or buying a Base token; flags lists what the contract can do to holders. Call GET /v1/x402/preflight?url=<paid endpoint> before paying any x402 seller you have not used; check isCircleUsdc, priceUsd and flags. On every route a 503 means no answer and no charge; retry later.",
     },
     servers: [{ url: new URL(c.req.url).origin }],
     paths: {
@@ -100,6 +131,22 @@ app.get("/openapi.json", (c) =>
             "200": { description: "The verdict.", content: { "application/json": { example: outputExample } } },
             "402": { description: "Payment required. The x402 challenge is in the Payment-Required header." },
             "503": { description: "The Concordium registry gave no answer. Not charged." },
+          },
+        },
+      },
+      "/v1/x402/preflight": {
+        get: {
+          operationId: "preflightX402Endpoint",
+          summary: preflightDescription,
+          parameters: [{ name: "url", in: "query", required: true, schema: preflightInputSchema.properties.url, example: exampleUrl }],
+          "x-payment-info": {
+            protocols: [{ x402: {} }],
+            price: { mode: "fixed", currency: "USD", amount: price.replace(/^\$/, "") },
+          },
+          responses: {
+            "200": { description: "What the endpoint demands.", content: { "application/json": { example: preflightOutputExample } } },
+            "402": { description: "Payment required. The x402 challenge is in the Payment-Required header." },
+            "503": { description: "The Base node gave no answer. Not charged." },
           },
         },
       },
@@ -131,7 +178,7 @@ app.get("/favicon.svg", (c) =>
     { "Content-Type": "image/svg+xml", "Cache-Control": "public, max-age=86400" },
   ),
 );
-app.get("/.well-known/x402", (c) => c.json({ version: 1, resources: ["/v1/check", "/v1/base/address"].map((path) => new URL(c.req.url).origin + path) }));
+app.get("/.well-known/x402", (c) => c.json({ version: 1, resources: ["/v1/check", "/v1/base/address", "/v1/x402/preflight"].map((path) => new URL(c.req.url).origin + path) }));
 
 // Hono answers HEAD with the GET handler minus the body; refuse it so nobody pays for an empty reply.
 app.use("/v1/*", async (c, next) => {
@@ -160,6 +207,15 @@ app.use(
           input: { address: exampleAddress },
           inputSchema: addressInputSchema,
           output: { example: addressOutputExample },
+        }),
+      },
+      "GET /v1/x402/preflight": {
+        ...paid,
+        description: preflightDescription,
+        extensions: declareDiscoveryExtension({
+          input: { url: exampleUrl },
+          inputSchema: preflightInputSchema,
+          output: { example: preflightOutputExample },
         }),
       },
       "GET /v1/agent/*": paid,
@@ -216,6 +272,22 @@ app.get("/v1/base/address", async (c) => {
   return c.json(r.body, r.status);
 });
 
+// A URL we refuse to fetch or a node outage is an error response, so it is not charged. An unreachable seller is an answer.
+async function preflightUrl(url: string) {
+  try {
+    const result = await preflight(url, liveProbe, baseChain);
+    if (!result.ok) return { status: 400 as const, body: { error: result.error, detail: "Pass the public https URL of a paid endpoint. You were not charged." } };
+    return { status: 200 as const, body: result.report };
+  } catch {
+    return { status: 503 as const, body: { error: "chain_unavailable", detail: "No answer from the Base node; you were not charged. Retry later." } };
+  }
+}
+
+app.get("/v1/x402/preflight", async (c) => {
+  const r = await preflightUrl(c.req.query("url") ?? "");
+  return c.json(r.body, r.status);
+});
+
 // Its own payment server: initializing one resets its facilitator state, which would break HTTP requests in flight.
 const mcp = createMcpHandler({
   resourceServer: newResourceServer(),
@@ -223,6 +295,7 @@ const mcp = createMcpHandler({
   price,
   checkBadge: check,
   inspectAddress,
+  preflightUrl,
 });
 app.post("/mcp", (c) => mcp(c.req.raw));
 app.all("/mcp", (c) => c.json({ jsonrpc: "2.0", error: { code: -32000, message: "Use POST." }, id: null }, 405, { Allow: "POST" }));

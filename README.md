@@ -101,7 +101,7 @@ Keys are written to `keys/`, which is git-ignored. `GET /audit` returns the reco
 PAY_TO=0xYourAddress bun run service   # GET /v1/check?badge=<token address>&network=mainnet|testnet, $0.005 per call
 ```
 
-Live at `https://warrant-agent-check.vercel.app/v1/check?badge=<token address>` (deployed from `api/index.ts`); `/openapi.json` and `/.well-known/x402` describe it for x402 directories. A second paid route, `/v1/base/address?address=<0x address>`, returns on-chain facts about a Base address or token (proxy, owner, mint, pause and blocklist powers) read from a public node. The unpaid request returns the correct 402 challenge; a paid call has not been run end to end.
+Live at `https://warrant-agent-check.vercel.app/v1/check?badge=<token address>` (deployed from `api/index.ts`); `/openapi.json` and `/.well-known/x402` describe it for x402 directories. A second paid route, `/v1/base/address?address=<0x address>`, returns on-chain facts about a Base address or token (proxy, owner, mint, pause and blocklist powers) read from a public node. A third, `/v1/x402/preflight?url=<paid endpoint>`, sends one unpaid request to another x402 seller and reports whether it is up, whether it asks for real USDC, the price, and what the receiving address is. `/mcp` serves all three as MCP tools. The unpaid request returns the correct 402 challenge; a paid call has not been run end to end.
 
 ## Verifying the audit log
 

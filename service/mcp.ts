@@ -13,6 +13,7 @@ export interface McpChecks {
   price: string;
   checkBadge(badge: string, network: string | undefined): Promise<Answer>;
   inspectAddress(address: string): Promise<Answer>;
+  preflightUrl(url: string): Promise<Answer>;
 }
 
 export function createMcpHandler(checks: McpChecks) {
@@ -50,6 +51,12 @@ export function createMcpHandler(checks: McpChecks) {
       `Facts about a Base address before you pay it or buy its token: wallet or contract, upgradeable proxy, owner, and whether it can mint, pause or blocklist. Costs ${checks.price} in USDC on Base.`,
       { address: z.string().describe("A 0x address on Base mainnet: a wallet, a contract or a token.") },
       paid(async (args) => reply(await checks.inspectAddress(String(args.address)))),
+    );
+    server.tool(
+      "preflight_x402_endpoint",
+      `Before you pay an x402 seller: is the endpoint up, does it ask for real Circle USDC, how much, and what is the address that receives the money. Costs ${checks.price} in USDC on Base.`,
+      { url: z.string().describe("The full https URL of the paid x402 endpoint you are about to call.") },
+      paid(async (args) => reply(await checks.preflightUrl(String(args.url)))),
     );
     // Stateless: one server and transport per request, so it runs on serverless hosts.
     const transport = new WebStandardStreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
