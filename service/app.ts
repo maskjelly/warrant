@@ -7,6 +7,7 @@ import { bazaarResourceServerExtension, declareDiscoveryExtension } from "@x402/
 import { paymentMiddleware, x402ResourceServer } from "@x402/hono";
 import { Hono } from "hono";
 import { createRegistry } from "../src/registry.js";
+import { createMcpHandler } from "./mcp.js";
 import { createBaseReader, inspect } from "./risk.js";
 
 const payTo = process.env.PAY_TO as `0x${string}` | undefined;
@@ -25,6 +26,7 @@ app.get("/", (c) =>
     what: "Tells you whether a Concordium-registered agent has a valid Verified by Concordium badge and which account answers for it.",
     paid: { route: "GET /v1/check?badge=<token address>&network=mainnet|testnet", price, network, protocol: "x402" },
     alsoPaid: { route: "GET /v1/base/address?address=<0x address>", price, what: "On-chain facts about a Base address or token before you pay it or buy it: proxy, owner, mint, pause and blocklist powers." },
+    mcp: "POST /mcp (streamable HTTP; tools check_concordium_agent and inspect_base_address, paid per call with x402)",
     openapi: "/openapi.json",
     source: "https://github.com/maskjelly/warrant",
   }),
@@ -133,6 +135,9 @@ app.use("/v1/*", async (c, next) => {
   await next();
 });
 
+const resourceServer = new x402ResourceServer(new HTTPFacilitatorClient(facilitator))
+  .register(network, new ExactEvmScheme())
+  .registerExtension(bazaarResourceServerExtension);
 const paid = { accepts: [{ scheme: "exact", price, network, payTo }], description, mimeType: "application/json" };
 app.use(
   paymentMiddleware(
@@ -156,9 +161,7 @@ app.use(
       },
       "GET /v1/agent/*": paid,
     },
-    new x402ResourceServer(new HTTPFacilitatorClient(facilitator))
-      .register(network, new ExactEvmScheme())
-      .registerExtension(bazaarResourceServerExtension),
+    resourceServer,
   ),
 );
 
@@ -194,15 +197,30 @@ app.get("/v1/agent/:badge", async (c) => {
   return c.json(r.body, r.status);
 });
 
-app.get("/v1/base/address", async (c) => {
-  // Error responses are not settled, so a bad address or a node outage is not charged.
+// Error responses are not settled, so a bad address or a node outage is not charged.
+async function inspectAddress(address: string) {
   try {
-    const result = await inspect(c.req.query("address") ?? "", baseChain);
-    if (!result.ok) return c.json({ error: result.error, detail: "Pass ?address=<0x address on Base>. You were not charged." }, 400);
-    return c.json(result.report);
+    const result = await inspect(address, baseChain);
+    if (!result.ok) return { status: 400 as const, body: { error: result.error, detail: "Pass a 0x address on Base. You were not charged." } };
+    return { status: 200 as const, body: result.report };
   } catch {
-    return c.json({ error: "chain_unavailable", detail: "No answer from the Base node; you were not charged. Retry later." }, 503);
+    return { status: 503 as const, body: { error: "chain_unavailable", detail: "No answer from the Base node; you were not charged. Retry later." } };
   }
+}
+
+app.get("/v1/base/address", async (c) => {
+  const r = await inspectAddress(c.req.query("address") ?? "");
+  return c.json(r.body, r.status);
 });
+
+const mcp = createMcpHandler({
+  resourceServer,
+  accept: { scheme: "exact", price, network, payTo },
+  price,
+  checkBadge: check,
+  inspectAddress,
+});
+app.post("/mcp", (c) => mcp(c.req.raw));
+app.all("/mcp", (c) => c.json({ jsonrpc: "2.0", error: { code: -32000, message: "Use POST." }, id: null }, 405, { Allow: "POST" }));
 
 export default app;
