@@ -120,6 +120,8 @@ app.get("/openapi.json", (c) =>
     },
   }),
 );
+// Proves to the official MCP Registry that whoever publishes this server controls this domain. The value is a public key.
+app.get("/.well-known/mcp-registry-auth", (c) => c.text("v=MCPv1; k=ed25519; p=sYz81Tpsz4qpMmJKgxTIN6NSLmk5TrnWOznv3bqQs+k="));
 app.get("/favicon.svg", (c) =>
   c.body(
     '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><rect width="32" height="32" rx="6" fill="#0b3d2e"/><path d="M8 16l6 6 10-12" fill="none" stroke="#fff" stroke-width="3.5"/></svg>',
