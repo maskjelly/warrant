@@ -64,7 +64,7 @@ app.get("/openapi.json", (c) =>
           summary: description,
           parameters: [
             { name: "badge", in: "query", required: true, schema: inputSchema.properties.badge, example: exampleBadge },
-            { name: "network", in: "query", required: false, schema: inputSchema.properties.network },
+            { name: "network", in: "query", required: false, schema: inputSchema.properties.network, example: "testnet" },
           ],
           "x-payment-info": {
             protocols: [{ x402: {} }],
@@ -117,7 +117,12 @@ app.use(
 
 async function check(badge: string, networkParam: string | undefined) {
   const which = networkParam === "testnet" ? "testnet" : "mainnet";
+  // Agent cards carry the chain-qualified form (ccd:<chain>/cis-2:<address>); the registry wants the bare address.
+  badge = badge.slice(badge.lastIndexOf(":") + 1);
   const verdict = await registries[which].verify(badge);
+  // Error responses are not settled, so a badge that cannot be looked up is not charged.
+  if (!verdict.valid && verdict.issues.includes("malformed_badge"))
+    return { status: 400 as const, body: { error: "malformed_badge", detail: "Not a Concordium token address. You were not charged." } };
   // A registry outage is not a verdict. Error responses are not settled, so the caller is not charged.
   const outage = !verdict.valid && verdict.issues.some((i) => /^registry_http_(429|5\d\d)$/.test(i));
   if (outage) return { status: 503 as const, body: { error: "registry_unavailable", detail: "No verdict; you were not charged. Retry later." } };
