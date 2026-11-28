@@ -137,9 +137,8 @@ app.use("/v1/*", async (c, next) => {
   await next();
 });
 
-const resourceServer = new x402ResourceServer(new HTTPFacilitatorClient(facilitator))
-  .register(network, new ExactEvmScheme())
-  .registerExtension(bazaarResourceServerExtension);
+const newResourceServer = () =>
+  new x402ResourceServer(new HTTPFacilitatorClient(facilitator)).register(network, new ExactEvmScheme());
 const paid = { accepts: [{ scheme: "exact", price, network, payTo }], description, mimeType: "application/json" };
 app.use(
   paymentMiddleware(
@@ -163,7 +162,7 @@ app.use(
       },
       "GET /v1/agent/*": paid,
     },
-    resourceServer,
+    newResourceServer().registerExtension(bazaarResourceServerExtension),
   ),
 );
 
@@ -215,8 +214,9 @@ app.get("/v1/base/address", async (c) => {
   return c.json(r.body, r.status);
 });
 
+// Its own payment server: initializing one resets its facilitator state, which would break HTTP requests in flight.
 const mcp = createMcpHandler({
-  resourceServer,
+  resourceServer: newResourceServer(),
   accept: { scheme: "exact", price, network, payTo },
   price,
   checkBadge: check,
