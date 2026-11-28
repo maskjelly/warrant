@@ -1,9 +1,9 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "app.vercel.warrant-agent-check/checks",
-  "title": "Warrant checks: Concordium agent badge and Base address facts",
-  "description": "Paid checks before an agent pays a counterparty: Concordium agent badge and Base address facts.",
-  "version": "0.1.0",
+  "title": "Warrant checks: x402 seller preflight, Base address facts, Concordium agent badge",
+  "description": "Paid checks before an agent pays: x402 seller preflight, Base address facts, Concordium badge.",
+  "version": "0.2.0",
   "websiteUrl": "https://github.com/maskjelly/warrant",
   "repository": { "url": "https://github.com/maskjelly/warrant", "source": "github" },
   "remotes": [{ "type": "streamable-http", "url": "https://warrant-agent-check.vercel.app/mcp" }]
