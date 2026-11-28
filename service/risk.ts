@@ -84,8 +84,9 @@ export async function inspect(input: string, chain: ChainReader): Promise<Inspec
     ),
   );
   const isToken = typeof decimals === "number" && typeof totalSupply === "bigint";
-  // Only tokens are scanned: a factory embeds its child token's code, selectors included, without being able to mint anything itself.
-  const powers = isToken
+  // Only contracts with a supply are scanned: a factory embeds its child token's code, selectors included, without being able to mint anything itself.
+  // decimals() is optional in ERC-20 and absent from NFTs, so it is not required here.
+  const powers = typeof totalSupply === "bigint"
     ? Object.entries(POWERS)
         .filter(([, signatures]) => signatures.some((s) => hasSelector(logic, s)))
         .map(([power]) => power)

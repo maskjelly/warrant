@@ -61,3 +61,9 @@ test("a beacon proxy is followed to the implementation its beacon names", async 
   });
   expect(await inspect(ADDR, chain)).toMatchObject({ ok: true, report: { proxy: { implementation: IMPL, beacon: BEACON }, flags: ["upgradeable_proxy"] } });
 });
+
+test("a token without decimals() still has its powers reported", async () => {
+  const code = `0x6080${toFunctionSelector("function pause()").slice(2)}` as `0x${string}`;
+  const chain = reader({ getCode: async () => code, read: async (_, sig) => (sig.includes("totalSupply") ? 100n : undefined) });
+  expect(await inspect(ADDR, chain)).toMatchObject({ ok: true, report: { kind: "contract", flags: ["can_pause"] } });
+});
