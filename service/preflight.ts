@@ -2,6 +2,7 @@
 // is it asking for real USDC, and what is the address that would receive the money?
 // One unpaid request is sent to the seller; nothing is paid on the caller's behalf.
 import { lookup } from "node:dns/promises";
+import { request } from "node:https";
 import { isIP } from "node:net";
 import { inspect, type ChainReader } from "./risk.js";
 
@@ -33,47 +34,65 @@ const isPrivate = (ip: string) =>
 export interface Probe {
   /** Resolves a hostname to the addresses a request would reach. */
   resolve(host: string): Promise<string[]>;
-  /** One unpaid GET, redirects not followed. */
-  get(url: string): Promise<{ status: number; header(name: string): string | null; text(): Promise<string> }>;
+  /** One unpaid GET to `url`, connecting to `address` and nowhere else; redirects not followed. */
+  get(url: string, address: string): Promise<{ status: number; header(name: string): string | null; text(): Promise<string> }>;
 }
 
 export const liveProbe: Probe = {
   resolve: async (host) => (isIP(host) ? [host] : (await lookup(host, { all: true })).map((a) => a.address)),
-  async get(url) {
-    const response = await fetch(url, { redirect: "manual", signal: AbortSignal.timeout(8000), headers: { accept: "application/json" } });
-    return {
-      status: response.status,
-      header: (name) => response.headers.get(name),
-      // A payment demand is small; refuse to buffer more.
-      text: async () => {
-        const reader = response.body?.getReader();
-        if (!reader) return "";
-        const chunks: Uint8Array[] = [];
-        for (let size = 0; size < 65536; ) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          chunks.push(value);
-          size += value.length;
-        }
-        await reader.cancel().catch(() => {});
-        return Buffer.concat(chunks).toString("utf8").slice(0, 65536);
-      },
-    };
-  },
+  get: (url, address) =>
+    new Promise((resolve, reject) => {
+      const req = request(
+        url,
+        {
+          method: "GET",
+          headers: { accept: "application/json" },
+          timeout: 8000,
+          // Connect to the address that was checked, so a second DNS answer cannot redirect the request to a private one.
+          lookup: (_host, options, callback) => {
+            const family = isIP(address);
+            if (options.all) (callback as unknown as (e: null, a: { address: string; family: number }[]) => void)(null, [{ address, family }]);
+            else callback(null, address, family);
+          },
+        },
+        (res) => {
+          const header = (name: string) => {
+            const value = res.headers[name.toLowerCase()];
+            return Array.isArray(value) ? (value[0] ?? null) : (value ?? null);
+          };
+          // A payment demand is small; refuse to buffer more.
+          const text = () =>
+            new Promise<string>((done, fail) => {
+              const chunks: Buffer[] = [];
+              let size = 0;
+              res.on("data", (chunk: Buffer) => {
+                chunks.push(chunk);
+                size += chunk.length;
+                if (size >= 65536) res.destroy();
+              });
+              res.on("close", () => done(Buffer.concat(chunks).toString("utf8").slice(0, 65536)));
+              res.on("error", fail);
+              res.resume();
+            });
+          resolve({ status: res.statusCode ?? 0, header, text });
+        },
+      );
+      req.on("timeout", () => req.destroy(new Error("timeout")));
+      req.on("error", reject);
+      req.end();
+    }),
 };
 
+const MAX_OPTIONS = 10;
 type Accept = { scheme?: unknown; network?: unknown; asset?: unknown; payTo?: unknown; amount?: unknown; maxAmountRequired?: unknown };
 export type Preflight = { ok: false; error: "malformed_url" | "url_not_allowed" } | { ok: true; report: Record<string, unknown> };
 
-function readDemand(header: string | null, body: string): { x402Version?: unknown; accepts?: unknown } | null {
-  for (const source of [header ? Buffer.from(header, "base64").toString("utf8") : null, body]) {
-    if (!source) continue;
-    try {
-      const parsed = JSON.parse(source);
-      if (parsed && typeof parsed === "object" && Array.isArray(parsed.accepts)) return parsed;
-    } catch {
-      // Not JSON: try the next source.
-    }
+function readDemand(source: string): { x402Version?: unknown; accepts: unknown[] } | null {
+  try {
+    const parsed = JSON.parse(source);
+    if (parsed && typeof parsed === "object" && Array.isArray(parsed.accepts)) return parsed;
+  } catch {
+    // Not JSON.
   }
   return null;
 }
@@ -100,7 +119,7 @@ export async function preflight(input: string, probe: Probe, base: ChainReader):
   const started = Date.now();
   let response: Awaited<ReturnType<Probe["get"]>>;
   try {
-    response = await probe.get(url.href);
+    response = await probe.get(url.href, addresses[0]!);
   } catch {
     flags.push("no_response");
     return { ok: true, report: { ...report, reachable: false } };
@@ -112,14 +131,21 @@ export async function preflight(input: string, probe: Probe, base: ChainReader):
     flags.push(response.status >= 500 ? "server_error" : response.status < 300 ? "answers_without_payment" : "no_payment_demand");
     return { ok: true, report };
   }
-  const demand = readDemand(response.header("payment-required"), await response.text());
+  // The header is the v2 form and is enough when present; the body is only read for v1 sellers, and a body that fails is unreadable, not an outage.
+  const header = response.header("payment-required");
+  const demand = (header ? readDemand(Buffer.from(header, "base64").toString("utf8")) : null) ?? readDemand(await response.text().catch(() => ""));
   if (!demand) {
     flags.push("payment_demand_unreadable");
     return { ok: true, report };
   }
   report.x402Version = demand.x402Version ?? null;
   const options = [];
-  for (const accept of (demand.accepts as Accept[]).slice(0, 5)) {
+  const accepts = demand.accepts.filter((a): a is Accept => typeof a === "object" && a !== null);
+  if (accepts.length < demand.accepts.length) flags.push("malformed_option_skipped");
+  // Each Base option costs chain reads, so the list is capped and the cap is reported.
+  if (accepts.length > MAX_OPTIONS) flags.push("options_truncated");
+  report.optionsTotal = accepts.length;
+  for (const accept of accepts.slice(0, MAX_OPTIONS)) {
     const optionFlags: string[] = [];
     const named = String(accept.network ?? "");
     const network = V1_NETWORKS[named] ?? named;

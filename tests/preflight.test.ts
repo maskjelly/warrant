@@ -16,10 +16,17 @@ function probe(answer: { status: number; header?: string; body?: string } | Erro
   const p = {
     calls: 0,
     resolve: async () => addresses,
-    get: async () => {
+    get: async (..._args: string[]) => {
       p.calls++;
       if (answer instanceof Error) throw answer;
-      return { status: answer.status, header: () => answer.header ?? null, text: async () => answer.body ?? "" };
+      return {
+        status: answer.status,
+        header: () => answer.header ?? null,
+        text: async () => {
+          if (answer.body === undefined) throw new Error("body stalled");
+          return answer.body;
+        },
+      };
     },
   };
   return p;
@@ -66,9 +73,27 @@ test("a v1 demand with a named network and maxAmountRequired is understood", asy
 test("dead, erroring and free endpoints are answers, each with its own flag", async () => {
   const flagsOf = async (p: Probe) => ((await preflight("https://seller.example/paid", p, wallet)) as unknown as { report: { flags: string[] } }).report.flags;
   expect(await flagsOf(probe(new Error("timeout")))).toEqual(["no_response"]);
+  expect(await flagsOf(probe({ status: 402 }))).toEqual(["payment_demand_unreadable"]);
   expect(await flagsOf(probe({ status: 402 }, []))).toEqual(["host_does_not_resolve"]);
   expect(await flagsOf(probe({ status: 500 }))).toEqual(["server_error"]);
   expect(await flagsOf(probe({ status: 200 }))).toEqual(["answers_without_payment"]);
   expect(await flagsOf(probe({ status: 404 }))).toEqual(["no_payment_demand"]);
   expect(await flagsOf(probe({ status: 402, body: "<html>" }))).toEqual(["payment_demand_unreadable"]);
+});
+
+test("a valid header is used even when the body fails, and the request goes to the checked address", async () => {
+  const p = probe({ status: 402, header: header(demand({ asset: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913" })) });
+  let connectedTo = "";
+  const get = p.get;
+  p.get = async (url: string, address: string) => ((connectedTo = address), get(url, address));
+  expect(await preflight("https://seller.example/paid", p, wallet)).toMatchObject({ ok: true, report: { options: [{ priceUsd: 0.005 }] } });
+  expect(connectedTo).toBe("93.184.216.34");
+});
+
+test("a malformed option is skipped and a long list is capped, both with a flag", async () => {
+  const good = demand({ asset: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913" }).accepts[0];
+  const body = JSON.stringify({ x402Version: 2, accepts: [null, ...Array(12).fill(good)] });
+  const result = await preflight("https://seller.example/paid", probe({ status: 402, body }), wallet);
+  expect(result).toMatchObject({ ok: true, report: { optionsTotal: 12, flags: ["malformed_option_skipped", "options_truncated"] } });
+  expect((result as unknown as { report: { options: unknown[] } }).report.options).toHaveLength(10);
 });
