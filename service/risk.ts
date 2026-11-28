@@ -15,6 +15,8 @@ export interface ChainReader {
 // EIP-1967 slots: keccak256("eip1967.proxy.implementation") - 1 and keccak256("eip1967.proxy.admin") - 1.
 const IMPLEMENTATION_SLOT = "0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc";
 const ADMIN_SLOT = "0xb53127684a568b3173ae13b9f8a6016e243e63b6e8ee1178d6a717850b5d6103";
+// EIP-1967 beacon slot: keccak256("eip1967.proxy.beacon") - 1. The beacon contract names the implementation.
+const BEACON_SLOT = "0xa3f0ad74e5423aebfd80d3ef4346578335a9a72aeaee59ff6cb3582b35133d50";
 // The older ZeppelinOS slots, still used by USDC: keccak256("org.zeppelinos.proxy.implementation") and "...admin".
 const LEGACY_IMPLEMENTATION_SLOT = "0x7050c9e0f4ca769c69bd3a8ef740bc37934f8e2c036e5a723fd8ee048ed3f8c3";
 const LEGACY_ADMIN_SLOT = "0x10d6a54a4754c8869d6886b5f5d7fbfa5b4522237ea5c60d11bc4e7a1ff9390b";
@@ -62,11 +64,17 @@ export async function inspect(input: string, chain: ChainReader): Promise<Inspec
     };
   }
 
-  const [implWord, adminWord, legacyImplWord, legacyAdminWord] = await Promise.all(
-    [IMPLEMENTATION_SLOT, ADMIN_SLOT, LEGACY_IMPLEMENTATION_SLOT, LEGACY_ADMIN_SLOT].map((slot) => chain.getStorageAt(address, slot as Hex)),
+  const [implWord, adminWord, legacyImplWord, legacyAdminWord, beaconWord] = await Promise.all(
+    [IMPLEMENTATION_SLOT, ADMIN_SLOT, LEGACY_IMPLEMENTATION_SLOT, LEGACY_ADMIN_SLOT, BEACON_SLOT].map((slot) => chain.getStorageAt(address, slot as Hex)),
   );
   const minimal = MINIMAL_PROXY.exec(code);
-  const implementation = slotAddress(implWord) ?? slotAddress(legacyImplWord) ?? (minimal ? getAddress(`0x${minimal[1]}`) : null);
+  const beacon = slotAddress(beaconWord);
+  const viaBeacon = beacon ? await chain.read(beacon, "function implementation() view returns (address)") : undefined;
+  const implementation =
+    slotAddress(implWord) ??
+    slotAddress(legacyImplWord) ??
+    (typeof viaBeacon === "string" && viaBeacon !== zeroAddress ? getAddress(viaBeacon) : null) ??
+    (minimal ? getAddress(`0x${minimal[1]}`) : null);
   const proxyAdmin = slotAddress(adminWord) ?? slotAddress(legacyAdminWord);
   // A proxy forwards to its implementation, so the powers live in that bytecode.
   const logic = implementation ? ((await chain.getCode(implementation)) ?? "0x") : code;
@@ -75,9 +83,13 @@ export async function inspect(input: string, chain: ChainReader): Promise<Inspec
       (s) => chain.read(address, `function ${s.replace(" returns", " view returns")}`),
     ),
   );
-  const powers = Object.entries(POWERS)
-    .filter(([, signatures]) => signatures.some((s) => hasSelector(logic, s)))
-    .map(([power]) => power);
+  const isToken = typeof decimals === "number" && typeof totalSupply === "bigint";
+  // Only tokens are scanned: a factory embeds its child token's code, selectors included, without being able to mint anything itself.
+  const powers = isToken
+    ? Object.entries(POWERS)
+        .filter(([, signatures]) => signatures.some((s) => hasSelector(logic, s)))
+        .map(([power]) => power)
+    : [];
 
   if (implementation) flags.push(minimal ? "minimal_proxy" : "upgradeable_proxy");
   if (typeof owner === "string" && owner !== zeroAddress) flags.push("has_owner");
@@ -85,14 +97,13 @@ export async function inspect(input: string, chain: ChainReader): Promise<Inspec
   for (const p of powers) flags.push(`can_${p}`);
   if (paused === true) flags.push("currently_paused");
 
-  const isToken = typeof decimals === "number" && typeof totalSupply === "bigint";
   return {
     ok: true,
     report: {
       ...common,
       kind: isToken ? "token" : "contract",
       codeBytes: (code.length - 2) / 2,
-      proxy: implementation ? { implementation, admin: proxyAdmin } : null,
+      proxy: implementation ? { implementation, admin: proxyAdmin, beacon } : null,
       owner: typeof owner === "string" ? owner : null,
       token: isToken ? { name: name ?? null, symbol: symbol ?? null, decimals, totalSupply: (totalSupply as bigint).toString() } : null,
       flags,

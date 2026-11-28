@@ -45,3 +45,19 @@ test("a node failure propagates so the caller is not charged for a partial answe
   const chain = reader({ getBalance: async () => { throw new Error("timeout"); } });
   await expect(inspect(ADDR, chain)).rejects.toThrow("timeout");
 });
+
+test("a factory that embeds token code is not reported as able to mint", async () => {
+  const code = `0x6080${toFunctionSelector("function mint(address,uint256)").slice(2)}` as `0x${string}`;
+  const result = await inspect(ADDR, reader({ getCode: async () => code }));
+  expect(result).toMatchObject({ ok: true, report: { kind: "contract", flags: [] } });
+});
+
+test("a beacon proxy is followed to the implementation its beacon names", async () => {
+  const BEACON = "0x4200000000000000000000000000000000000006";
+  const chain = reader({
+    getCode: async () => "0x60806040",
+    getStorageAt: async (_, slot) => (slot.startsWith("0xa3f0") ? word(BEACON) : `0x${"0".repeat(64)}`),
+    read: async (a, sig) => (a === BEACON && sig.includes("implementation") ? IMPL : undefined),
+  });
+  expect(await inspect(ADDR, chain)).toMatchObject({ ok: true, report: { proxy: { implementation: IMPL, beacon: BEACON }, flags: ["upgradeable_proxy"] } });
+});
